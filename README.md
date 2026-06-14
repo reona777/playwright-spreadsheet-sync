@@ -1,136 +1,86 @@
-# Playwright × Python スプレッドシート自動同期
+# playwright-spreadsheet-sync
 
-Playwright でWebページから商品情報を収集し、Google Sheets API でスプレッドシートへ自動同期するサンプルです。
-`--dummy` フラグで実際のスクレイピングなしに動作確認できます。
+> PlaywrightでWebページから商品情報を収集し、Google Sheetsへ差分同期するスクレイピングパイプライン
 
----
+毎回全件上書きではなく「既存行は更新・新規行のみ追記」の差分同期を実装。定期実行に適した設計で、`--dummy` フラグでスクレイピングなしの動作確認にも対応しています。
 
 ## 処理フロー
 
 ```
 Playwright（Chromium）
   ↓  ページネーションを辿りながら商品情報を収集
-scraper.py
-  ↓  Product データクラスのリストとして返す
-sheets_sync.py
-  ↓  既存行は上書き更新・新規行は追記（差分同期）
+scraper.py（Product データクラスで型安全に管理）
+  ↓
+sheets_sync.py（商品IDをキーに差分検出）
+  ↓  既存行は上書き更新・新規行は追記
 Google スプレッドシート
 ```
 
----
+## 技術スタック
 
-## ファイル構成
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=flat&logo=playwright&logoColor=white)
+![Google Sheets](https://img.shields.io/badge/Google%20Sheets-34A853?style=flat&logo=google-sheets&logoColor=white)
 
-```
-playwright-spreadsheet-sync/
-├── main.py              # エントリポイント・CLI引数処理
-├── scraper.py           # Playwright スクレイピング・ダミーデータ定義
-├── sheets_sync.py       # Google Sheets API 差分同期処理
-├── requirements.txt     # 依存パッケージ
-└── tests/
-    └── test_scraper.py  # pytest ユニットテスト
-```
+- **Python 3.x**
+- **Playwright** — Chromiumを使ったヘッドレスブラウザスクレイピング
+- **Google Sheets API** — 差分同期・データ蓄積
+- **pytest** — ユニットテスト
 
----
+## 実装上の工夫
+
+- スクレイピング結果を `dataclass` で型定義し、同期処理との責務を明確に分離
+- 商品IDをキーにした差分検出で、定期実行のたびに全件書き直しを防止
+- `--dummy` フラグでダミーデータを使用でき、認証情報なしで動作確認が可能
+- `--no-headless` でブラウザを表示しながらデバッグできるオプション設計
 
 ## セットアップ
 
-### 1. 仮想環境と依存パッケージ
-
 ```bash
 python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 2. Google Cloud でサービスアカウントを作成
+Google Cloudのサービスアカウントキー（JSON）を `credentials.json` として配置してください（`.gitignore` 対象）。
 
-1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作成
-2. 「APIとサービス」→「ライブラリ」で **Google Sheets API** を有効化
-3. 「認証情報」→「サービスアカウント」を作成し、JSONキーをダウンロード
-4. ダウンロードしたJSONを `credentials.json` として配置
-   （`.gitignore` で除外済み — Gitにコミットしないこと）
-
-### 3. スプレッドシートの共有設定
-
-サービスアカウントのメールアドレス（`xxxxx@your-project.iam.gserviceaccount.com`）を
-対象スプレッドシートに **編集者** として共有する。
-
----
-
-## 実行方法
-
-### ダミーデータで動作確認（スクレイピング不要）
+## 使い方
 
 ```bash
+# ダミーデータで動作確認（スクレイピング不要）
 python main.py --dummy --spreadsheet-id YOUR_SPREADSHEET_ID
-```
 
-### 実サイトをスクレイピングして同期
-
-```bash
+# 実際のスクレイピングと同期
 python main.py --spreadsheet-id YOUR_SPREADSHEET_ID
 ```
 
-スプレッドシートIDは環境変数でも渡せます。
-
 ```bash
-export SPREADSHEET_ID=your_spreadsheet_id
-python main.py --dummy
+# テスト実行
+pytest tests/ -v
 ```
 
 ### オプション一覧
 
 | オプション | 説明 | デフォルト |
 |---|---|---|
-| `--dummy` | ダミーデータを使用（スクレイピングをスキップ） | off |
+| `--dummy` | ダミーデータを使用 | off |
 | `--spreadsheet-id` | 同期先スプレッドシートID | 環境変数 `SPREADSHEET_ID` |
-| `--sheet-name` | 書き込み先のシート名 | `商品一覧` |
+| `--sheet-name` | 書き込み先シート名 | `商品一覧` |
 | `--credentials` | サービスアカウントJSONのパス | `credentials.json` |
-| `--no-headless` | ブラウザを表示して実行（デバッグ用） | off |
+| `--no-headless` | ブラウザを表示して実行 | off |
 
----
+## ファイル構成
 
-## テスト実行
-
-```bash
-pytest tests/ -v
 ```
-
----
-
-## 同期後のスプレッドシート構成
-
-| 商品ID | 商品名 | カテゴリ | 価格（円） | 在庫数 | 在庫状態 | URL | 最終更新日時 |
-|---|---|---|---|---|---|---|---|
-| P001 | ビジネスバッグ A4対応 | バッグ | 12800 | 15 | 在庫あり | https://... | 2026/05/15 09:00:00 |
-| P005 | 保温タンブラー 500ml | キッチン | 2800 | 0 | 在庫切れ | https://... | 2026/05/15 09:00:00 |
-
-差分同期のため、2回目以降の実行では既存行が上書き更新され、新規商品のみ追記されます。
-
----
-
-## スクレイピング対象のカスタマイズ
-
-`scraper.py` の `_parse_product()` 内のCSSセレクタを実際のサイト構造に合わせて変更してください。
-
-```python
-# 変更例
-name = await item.locator(".your-site__product-title").inner_text()
-price_text = await item.locator(".your-site__price").inner_text()
+playwright-spreadsheet-sync/
+├── main.py              # CLI引数処理・エントリポイント
+├── scraper.py           # Playwright スクレイピング・ダミーデータ定義
+├── sheets_sync.py       # Google Sheets API 差分同期処理
+├── requirements.txt
+└── tests/
+    └── test_scraper.py
 ```
-
-`BASE_URL` と `_scrape_pages()` のページネーション処理も合わせて調整してください。
-
----
-
-## GitHub Actions での定期実行
-
-`.github/workflows/` にワークフローを配置すれば、毎日自動実行できます。
-詳細は [github-actions-scheduler](https://github.com/reona777/github-actions-scheduler) を参照してください。
-
----
 
 ## ライセンス
 
